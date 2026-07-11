@@ -1,19 +1,53 @@
+import argparse
 import sys
 import time
+from pathlib import Path
+
 from faster_whisper import WhisperModel
 
-if len(sys.argv) < 3:
-    print("Использование: python transcribe.py <аудио_файл> <выходной_файл>")
-    sys.exit(1)
+parser = argparse.ArgumentParser(description="Транскрибация аудио через faster-whisper.")
+parser.add_argument("input_file", help="путь к аудиофайлу")
+parser.add_argument("output_file", help="куда сохранить расшифровку")
+parser.add_argument("--model", default="large-v3", help="размер модели (tiny/base/small/medium/large-v3/large-v3-turbo)")
+parser.add_argument("--language", default="ru", help="код языка (ru, en, ...)")
+parser.add_argument(
+    "--prompt",
+    help=(
+        "initial prompt — строка со словарём имён/терминов. "
+        "Whisper учитывает не более ~224 токенов с конца prompt, "
+        "остальное молча игнорируется. Держи только собственные имена "
+        "и редкие термины, которые действительно встречаются в аудио."
+    ),
+)
+parser.add_argument(
+    "--prompt-file",
+    help="путь к файлу с initial prompt (альтернатива --prompt); действует то же ограничение ~224 токена",
+)
+parser.add_argument("--beam-size", type=int, default=10, help="ширина beam search")
+parser.add_argument("--no-vad", action="store_true", help="отключить VAD-фильтр")
+args = parser.parse_args()
 
-input_file = sys.argv[1]
-output_file = sys.argv[2]
+initial_prompt = args.prompt
+if args.prompt_file:
+    if initial_prompt:
+        print("Ошибка: укажи либо --prompt, либо --prompt-file, не оба.", file=sys.stderr)
+        sys.exit(1)
+    initial_prompt = Path(args.prompt_file).read_text(encoding="utf-8").strip()
 
-print("Загрузка модели...")
-model = WhisperModel("medium", compute_type="int8")
+print(f"Загрузка модели {args.model}...")
+model = WhisperModel(args.model, compute_type="int8")
 
 print("Определение длительности аудио...")
-segments, info = model.transcribe(input_file, language="ru")
+segments, info = model.transcribe(
+    args.input_file,
+    language=args.language,
+    initial_prompt=initial_prompt,
+    vad_filter=not args.no_vad,
+    vad_parameters=dict(min_silence_duration_ms=500),
+    condition_on_previous_text=False,
+    beam_size=args.beam_size,
+    temperature=[0.0, 0.2, 0.4],
+)
 
 duration = info.duration
 print(f"Длительность: {duration:.0f} сек. Транскрибирую...\n")
@@ -21,7 +55,7 @@ print(f"Длительность: {duration:.0f} сек. Транскрибир�
 start_time = time.time()
 
 try:
-    with open(output_file, "w", encoding="utf-8") as f:
+    with open(args.output_file, "w", encoding="utf-8") as f:
         for segment in segments:
             progress = segment.end / duration
             elapsed = time.time() - start_time
@@ -38,11 +72,11 @@ try:
 
     elapsed_total = time.time() - start_time
     mins, secs = divmod(int(elapsed_total), 60)
-    print(f"\n\nГотово за {mins}м {secs:02d}с! Результат записан в {output_file}")
+    print(f"\n\nГотово за {mins}м {secs:02d}с! Результат записан в {args.output_file}")
 
 except KeyboardInterrupt:
     elapsed_total = time.time() - start_time
     mins, secs = divmod(int(elapsed_total), 60)
     print(f"\n\nПрервано пользователем после {mins}м {secs:02d}с.")
-    print(f"Частичный результат сохранён в {output_file}")
+    print(f"Частичный результат сохранён в {args.output_file}")
     sys.exit(130)
