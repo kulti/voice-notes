@@ -1,4 +1,5 @@
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -25,6 +26,10 @@ parser.add_argument(
 )
 parser.add_argument("--beam-size", type=int, default=10, help="ширина beam search")
 parser.add_argument("--no-vad", action="store_true", help="отключить VAD-фильтр")
+parser.add_argument(
+    "--json-out",
+    help="доп. файл в формате JSON Lines с {start, end, text} по каждому сегменту — вход для diarize.py apply",
+)
 args = parser.parse_args()
 
 initial_prompt = args.prompt
@@ -53,6 +58,7 @@ duration = info.duration
 print(f"Длительность: {duration:.0f} сек. Транскрибирую...\n")
 
 start_time = time.time()
+json_file = open(args.json_out, "w", encoding="utf-8") if args.json_out else None
 
 try:
     with open(args.output_file, "w", encoding="utf-8") as f:
@@ -68,7 +74,16 @@ try:
                 eta_str = "оценка..."
 
             print(f"\r[{progress * 100:5.1f}%] {segment.end:.0f}/{duration:.0f} сек. | {eta_str}   ", end="", flush=True)
-            f.write(segment.text.strip() + "\n")
+            text = segment.text.strip()
+            f.write(text + "\n")
+            if json_file:
+                json_file.write(
+                    json.dumps(
+                        {"start": segment.start, "end": segment.end, "text": text},
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
 
     elapsed_total = time.time() - start_time
     mins, secs = divmod(int(elapsed_total), 60)
@@ -80,3 +95,6 @@ except KeyboardInterrupt:
     print(f"\n\nПрервано пользователем после {mins}м {secs:02d}с.")
     print(f"Частичный результат сохранён в {args.output_file}")
     sys.exit(130)
+finally:
+    if json_file:
+        json_file.close()

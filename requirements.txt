@@ -1,0 +1,14 @@
+# Pin numpy<2: torch 2.2.x is compiled against NumPy 1.x and crashes on 2.x.
+numpy==1.26.4
+
+faster-whisper==1.2.1
+sounddevice==0.5.5
+soundfile==0.13.1
+pynput==1.8.2
+
+# Optional, only for diarize.py
+pyannote.audio==3.4.0
+torch==2.2.2
+torchaudio==2.2.2
+# pyannote 3.4.0 still calls hf_hub_download(use_auth_token=...), removed in huggingface_hub 1.0.
+huggingface_hub==0.36.2
